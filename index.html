@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gen Studio — internal AI generation tool</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6;
+    --accent-ink: #ffffff;
+    --good: #006300;
+    --critical: #d03b3b;
+    --warning-bg: #fdf3dd;
+    --chip: #f0efec;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --accent: #3987e5;
+    --accent-ink: #ffffff;
+    --good: #0ca30c;
+    --critical: #e66767;
+    --warning-bg: #2b2415;
+    --chip: #383835;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --accent: #3987e5;
+      --accent-ink: #ffffff;
+      --good: #0ca30c;
+      --critical: #e66767;
+      --warning-bg: #2b2415;
+      --chip: #383835;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.45;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 20px 20px 60px; }
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  header .sub { color: var(--muted); font-size: 12.5px; }
+  .spacer { flex: 1; }
+  .keybox { display: flex; align-items: center; gap: 8px; }
+  .keybox input {
+    width: 240px; padding: 7px 10px; border: 1px solid var(--grid); border-radius: 8px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--critical); flex: none; }
+  .dot.ok { background: var(--good); }
+  button {
+    font-family: inherit; font-size: 13.5px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--grid); background: var(--surface-1); color: var(--text-primary);
+    padding: 7px 14px;
+  }
+  button:hover { border-color: var(--baseline); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; padding: 10px 18px; }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.ghost { border: none; background: none; color: var(--text-secondary); padding: 4px 8px; }
+  button.ghost:hover { color: var(--text-primary); }
+  /* stat row */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0 18px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .tile .label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+  .tile .value { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  .tile .hint { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  /* tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--grid); margin-bottom: 16px; flex-wrap: wrap; }
+  .tabs button { border: none; background: none; padding: 8px 14px; border-radius: 8px 8px 0 0; color: var(--text-secondary); font-weight: 500; }
+  .tabs button.active { color: var(--text-primary); font-weight: 650; box-shadow: inset 0 -2px 0 var(--accent); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  label.f { display: block; font-size: 12.5px; color: var(--text-secondary); margin: 12px 0 4px; font-weight: 550; }
+  select, textarea, input[type=text], input[type=url], input[type=number] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--grid); border-radius: 8px;
+    background: var(--surface-1); color: var(--text-primary); font-family: inherit; font-size: 13.5px;
+  }
+  textarea { min-height: 84px; resize: vertical; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .estcost { font-size: 13px; color: var(--text-secondary); }
+  .estcost b { color: var(--text-primary); }
+  .note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .banner { background: var(--warning-bg); border: 1px solid var(--grid); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; }
+  .banner ol { margin: 6px 0 0 18px; padding: 0; }
+  .banner li { margin: 3px 0; }
+  a { color: var(--accent); }
+  /* jobs */
+  .jobs { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .job { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+  .job .spin { width: 12px; height: 12px; border: 2px solid var(--grid); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.9s linear infinite; flex: none; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .job.err { border-color: var(--critical); }
+  .job .jp { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  /* history */
+  .hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .hcard { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .hcard video, .hcard img { width: 100%; display: block; background: #000; aspect-ratio: 16/9; object-fit: contain; }
+  .hcard .meta { padding: 10px 12px; }
+  .hcard .p { font-size: 12.5px; color: var(--text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .hcard .m { font-size: 11.5px; color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; gap: 6px; }
+  /* presets */
+  .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .pcard { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .pcard h4 { margin: 0 0 4px; font-size: 13.5px; }
+  .pcard p { margin: 0 0 8px; font-size: 12px; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .chip { display: inline-block; background: var(--chip); color: var(--text-secondary); border-radius: 6px; padding: 1px 8px; font-size: 11px; margin-bottom: 6px; }
+  /* table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text-secondary); font-weight: 550; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--grid); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--grid); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Gen Studio</h1>
+    <span class="sub">pay-per-use video &amp; image generation via fal.ai</span>
+    <div class="spacer"></div>
+    <button class="ghost" id="themeBtn" title="Toggle light/dark">◐</button>
+    <div class="keybox">
+      <span class="dot" id="keyDot"></span>
+      <input type="password" id="apiKey" placeholder="fal.ai API key" autocomplete="off">
+    </div>
+  </header>
+
+  <div class="banner" id="setupBanner" style="display:none">
+    <b>First-time setup (~2 minutes):</b>
+    <ol>
+      <li>Create an account at <a href="https://fal.ai" target="_blank" rel="noopener">fal.ai</a> and add a payment method under Billing (pay-per-use, no subscription).</li>
+      <li>Go to <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">Dashboard → Keys</a>, create a key, and paste it in the field above.</li>
+      <li>The key is stored only in this browser (localStorage) — nothing is sent anywhere except directly to fal.ai.</li>
+    </ol>
+  </div>
+
+  <div class="stats">
+    <div class="tile"><div class="label">Spend, month to date</div><div class="value" id="stSpend">$0.00</div><div class="hint">estimated, all models</div></div>
+    <div class="tile"><div class="label">Generations this month</div><div class="value" id="stCount">0</div><div class="hint" id="stMix">—</div></div>
+    <div class="tile"><div class="label">Avg cost per generation</div><div class="value" id="stAvg">—</div><div class="hint">this month</div></div>
+    <div class="tile"><div class="label">Higgsfield Ultra equivalent</div><div class="value" id="stVs">$99+</div><div class="hint">what a subscription would cost</div></div>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="video" class="active">Video</button>
+    <button data-tab="image">Image</button>
+    <button data-tab="presets">Presets</button>
+    <button data-tab="history">History</button>
+    <button data-tab="costs">Costs</button>
+  </div>
+
+  <!-- VIDEO -->
+  <div class="panel active" id="panel-video">
+    <div class="card">
+      <div class="grid2">
+        <div>
+          <label class="f">Model</label>
+          <select id="vModel"></select>
+          <label class="f">Prompt <button class="ghost" style="float:right;font-size:11.5px" onclick="openPresetPicker('video')">+ insert preset</button></label>
+          <textarea id="vPrompt" placeholder="A slow cinematic dolly-in on a ceramic espresso cup, steam rising, warm morning light…"></textarea>
+          <label class="f">Negative prompt (optional)</label>
+          <input type="text" id="vNeg" placeholder="blur, distort, low quality">
+        </div>
+        <div>
+          <div class="grid2">
+            <div>
+              <label class="f">Duration</label>
+              <select id="vDuration"></select>
+            </div>
+            <div>
+              <label class="f">Aspect ratio</label>
+              <select id="vAspect"></select>
+            </div>
+          </div>
+          <div id="vVeoOpts" style="display:none">
+            <div class="grid2">
+              <div>
+                <label class="f">Resolution</label>
+                <select id="vRes"><option value="720p">720p</option><option value="1080p">1080p</option></select>
+              </div>
+              <div>
+                <label class="f">Audio</label>
+                <select id="vAudio"><option value="true">On</option><option value="false">Off (cheaper)</option></select>
+              </div>
+            </div>
+          </div>
+          <div id="vI2v">
+            <label class="f">Start image (optional → image-to-video)</label>
+            <input type="url" id="vImgUrl" placeholder="https://… image URL">
+            <div class="row" style="margin-top:6px">
+              <input type="file" id="vImgFile" accept="image/*" style="width:auto">
+              <span class="note" id="vImgNote"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:18px; justify-content: space-between;">
+        <span class="estcost">Estimated cost: <b id="vCost">$0.35</b> <span id="vCostNote"></span></span>
+        <button class="primary" id="vGo">Generate video</button>
+      </div>
+      <div class="note" id="vModelNote"></div>
+    </div>
+    <div class="jobs" id="jobs-video"></div>
+  </div>
+
+  <!-- IMAGE -->
+  <div class="panel" id="panel-image">
+    <div class="card">
+      <div class="grid2">
+        <div>
+          <label class="f">Model</label>
+          <select id="iModel"></select>
+          <label class="f">Prompt <button class="ghost" style="float:right;font-size:11.5px" onclick="openPresetPicker('image')">+ insert preset</button></label>
+          <textarea id="iPrompt" placeholder="Editorial fashion photo, model in oversized cream knit, brutalist rooftop, golden hour, shot on 85mm…"></textarea>
+        </div>
+        <div>
+          <div class="grid2">
+            <div>
+              <label class="f">Aspect / size</label>
+              <select id="iSize"></select>
+            </div>
+            <div>
+              <label class="f">Images</label>
+              <select id="iNum"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:18px; justify-content: space-between;">
+        <span class="estcost">Estimated cost: <b id="iCost">$0.039</b></span>
+        <button class="primary" id="iGo">Generate image</button>
+      </div>
+    </div>
+    <div class="jobs" id="jobs-image"></div>
+  </div>
+
+  <!-- PRESETS -->
+  <div class="panel" id="panel-presets">
+    <div class="card" style="margin-bottom:14px">
+      <div class="grid2">
+        <div>
+          <label class="f">Preset name</label>
+          <input type="text" id="pName" placeholder="e.g. Crash zoom + rack focus">
+          <label class="f">Type</label>
+          <select id="pType"><option value="video">Video (camera / motion)</option><option value="image">Image (style)</option></select>
+        </div>
+        <div>
+          <label class="f">Prompt text</label>
+          <textarea id="pText" placeholder="camera crash-zooms toward the subject then racks focus to the background…"></textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px; justify-content:flex-end">
+        <button class="primary" id="pAdd">Save preset</button>
+      </div>
+    </div>
+    <div class="pgrid" id="presetGrid"></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="panel" id="panel-history">
+    <div class="hgrid" id="histGrid"></div>
+    <div class="empty" id="histEmpty">Nothing generated yet.</div>
+  </div>
+
+  <!-- COSTS -->
+  <div class="panel" id="panel-costs">
+    <div class="card">
+      <div class="row" style="justify-content:space-between; margin-bottom:10px">
+        <b style="font-size:14px" id="costTitle">This month by model</b>
+        <button class="ghost" id="costExport">Export CSV</button>
+      </div>
+      <table>
+        <thead><tr><th>Model</th><th class="num">Generations</th><th class="num">Seconds / images</th><th class="num">Est. spend</th></tr></thead>
+        <tbody id="costBody"></tbody>
+      </table>
+      <div class="note">Estimates use list prices per model (see picker). Your fal.ai dashboard → Billing is the source of truth.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+/* ---------- model catalog (verified endpoints, July 2026) ---------- */
+const VIDEO_MODELS = {
+  'kling-2.5-pro': {
+    name: 'Kling 2.5 Turbo Pro — best value',
+    t2v: 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
+    i2v: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+    perSec: 0.07,
+    durations: ['5','10'],
+    aspects: ['16:9','9:16','1:1'],
+    i2vSupported: true,
+    note: 'Great motion + prompt adherence at $0.07/s. Default choice for most shots.'
+  },
+  'veo-3.1-fast': {
+    name: 'Veo 3.1 Fast — hero shots, native audio',
+    t2v: 'fal-ai/veo3.1/fast',
+    i2v: null,
+    perSec: { '720p': 0.10, '1080p': 0.15 },
+    durations: ['4s','6s','8s'],
+    aspects: ['16:9','9:16'],
+    i2vSupported: false,
+    veo: true,
+    note: 'Use for top-quality clips with sound. Turning audio off is cheaper on some routes.'
+  },
+  'hailuo-02': {
+    name: 'MiniMax Hailuo 02 — cheapest',
+    t2v: 'fal-ai/minimax/hailuo-02/standard/text-to-video',
+    i2v: null,
+    perSec: 0.045,
+    durations: ['6','10'],
+    aspects: ['16:9'],
+    i2vSupported: false,
+    note: '768p, ~$0.27 per 6s clip. Ideal for drafts and iteration before a hero render.'
+  }
+};
+const IMAGE_MODELS = {
+  'nano-banana': {
+    name: 'Nano Banana (Gemini) — $0.039/image',
+    ep: 'fal-ai/nano-banana',
+    perImage: 0.039,
+    sizeParam: 'aspect_ratio',
+    sizes: ['1:1','16:9','9:16','4:3','3:4','3:2','2:3','4:5','5:4','21:9']
+  },
+  'seedream-4': {
+    name: 'Seedream v4 — $0.03/image',
+    ep: 'fal-ai/bytedance/seedream/v4/text-to-image',
+    perImage: 0.03,
+    sizeParam: 'image_size',
+    sizes: ['square_hd','portrait_4_3','portrait_16_9','landscape_4_3','landscape_16_9']
+  }
+};
+
+const BUILTIN_PRESETS = [
+  { name:'Dolly in', type:'video', text:'slow cinematic dolly-in toward the subject, shallow depth of field', builtin:true },
+  { name:'Crane up + reveal', type:'video', text:'camera cranes upward smoothly, revealing the wider scene below', builtin:true },
+  { name:'360 orbit', type:'video', text:'camera orbits 360 degrees around the subject at constant speed, subject centered', builtin:true },
+  { name:'FPV fly-through', type:'video', text:'fast FPV drone shot flying through the scene, dynamic banking turns, motion blur', builtin:true },
+  { name:'Whip pan', type:'video', text:'rapid whip pan transition to the subject, ending in a crisp locked-off frame', builtin:true },
+  { name:'Bullet time', type:'video', text:'time freezes while the camera arcs around the subject, frozen particles in the air', builtin:true },
+  { name:'Crash zoom', type:'video', text:'aggressive crash zoom into the subject’s face, handheld energy', builtin:true },
+  { name:'Handheld documentary', type:'video', text:'subtle handheld camera sway, natural documentary feel, available light', builtin:true },
+  { name:'Product hero rotate', type:'video', text:'studio product shot, product slowly rotating on a pedestal, soft key light, seamless background', builtin:true },
+  { name:'Editorial fashion', type:'image', text:'editorial fashion photography, shot on 85mm f/1.4, golden hour rim light, film grain, Vogue aesthetic', builtin:true },
+  { name:'UGC selfie ad', type:'image', text:'casual iPhone selfie style photo, natural indoor lighting, authentic UGC look, slightly imperfect framing', builtin:true },
+  { name:'Clean product studio', type:'image', text:'minimal studio product photography, soft gradient background, crisp reflections, commercial lighting', builtin:true }
+];
+
+/* ---------- storage ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('gs_' + k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+  set(k, v) { localStorage.setItem('gs_' + k, JSON.stringify(v)); }
+};
+let history = store.get('history', []);
+let customPresets = store.get('presets', []);
+
+/* ---------- theme ---------- */
+document.getElementById('themeBtn').onclick = () => {
+  const cur = document.documentElement.dataset.theme ||
+    (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  store.set('theme', next);
+};
+const savedTheme = store.get('theme', null);
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+
+/* ---------- api key ---------- */
+const keyInput = document.getElementById('apiKey');
+keyInput.value = store.get('key', '');
+function refreshKeyUI() {
+  const ok = keyInput.value.trim().length > 10;
+  document.getElementById('keyDot').className = 'dot' + (ok ? ' ok' : '');
+  document.getElementById('setupBanner').style.display = ok ? 'none' : 'block';
+}
+keyInput.addEventListener('input', () => { store.set('key', keyInput.value.trim()); refreshKeyUI(); });
+refreshKeyUI();
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('panel-' + b.dataset.tab).classList.add('active');
+});
+
+/* ---------- video form ---------- */
+const vModel = document.getElementById('vModel');
+Object.entries(VIDEO_MODELS).forEach(([id, m]) => vModel.add(new Option(m.name, id)));
+const vDuration = document.getElementById('vDuration');
+const vAspect = document.getElementById('vAspect');
+let vImgDataUri = null;
+
+function vRefresh() {
+  const m = VIDEO_MODELS[vModel.value];
+  vDuration.innerHTML = ''; m.durations.forEach(d => vDuration.add(new Option(d.replace('s','') + 's', d)));
+  vAspect.innerHTML = ''; m.aspects.forEach(a => vAspect.add(new Option(a, a)));
+  document.getElementById('vVeoOpts').style.display = m.veo ? '' : 'none';
+  document.getElementById('vI2v').style.display = m.i2vSupported ? '' : 'none';
+  document.getElementById('vModelNote').textContent = m.note;
+  vCostRefresh();
+}
+function vSeconds() { return parseInt(vDuration.value, 10) || 5; }
+function vEstCost() {
+  const m = VIDEO_MODELS[vModel.value];
+  const s = vSeconds();
+  if (typeof m.perSec === 'object') {
+    const res = document.getElementById('vRes').value;
+    return s * (m.perSec[res] || 0.10);
+  }
+  return s * m.perSec;
+}
+function vCostRefresh() {
+  document.getElementById('vCost').textContent = '$' + vEstCost().toFixed(2);
+  document.getElementById('vCostNote').textContent = '(~' + vSeconds() + 's × list rate, est.)';
+}
+[vModel, vDuration, document.getElementById('vRes')].forEach(el => el.addEventListener('change', () => { if (el === vModel) vRefresh(); else vCostRefresh(); }));
+vRefresh();
+
+document.getElementById('vImgFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  const note = document.getElementById('vImgNote');
+  if (!f) { vImgDataUri = null; note.textContent = ''; return; }
+  if (f.size > 6 * 1024 * 1024) { note.textContent = 'Image too large (>6MB) — use a URL instead.'; e.target.value = ''; return; }
+  const r = new FileReader();
+  r.onload = () => { vImgDataUri = r.result; note.textContent = f.name + ' attached'; };
+  r.readAsDataURL(f);
+});
+
+/* ---------- image form ---------- */
+const iModel = document.getElementById('iModel');
+Object.entries(IMAGE_MODELS).forEach(([id, m]) => iModel.add(new Option(m.name, id)));
+const iSize = document.getElementById('iSize');
+function iRefresh() {
+  const m = IMAGE_MODELS[iModel.value];
+  iSize.innerHTML = ''; m.sizes.forEach(s => iSize.add(new Option(s.replace(/_/g,' '), s)));
+  iCostRefresh();
+}
+function iEstCost() {
+  const m = IMAGE_MODELS[iModel.value];
+  return m.perImage * parseInt(document.getElementById('iNum').value, 10);
+}
+function iCostRefresh() { document.getElementById('iCost').textContent = '$' + iEstCost().toFixed(3); }
+iModel.addEventListener('change', iRefresh);
+document.getElementById('iNum').addEventListener('change', iCostRefresh);
+iRefresh();
+
+/* ---------- fal queue client ---------- */
+async function falSubmit(endpoint, input) {
+  const key = keyInput.value.trim();
+  if (!key) throw new Error('Add your fal.ai API key first (top right).');
+  const res = await fetch('https://queue.fal.run/' + endpoint, {
+    method: 'POST',
+    headers: { 'Authorization': 'Key ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  if (!res.ok) throw new Error('Submit failed (' + res.status + '): ' + (await res.text()).slice(0, 300));
+  return res.json(); // { request_id, status_url, response_url }
+}
+async function falPoll(job) {
+  const key = keyInput.value.trim();
+  for (let i = 0; i < 400; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const s = await fetch(job.status_url, { headers: { 'Authorization': 'Key ' + key } });
+    if (!s.ok) throw new Error('Status check failed (' + s.status + ')');
+    const st = await s.json();
+    if (st.status === 'COMPLETED') {
+      const r = await fetch(job.response_url, { headers: { 'Authorization': 'Key ' + key } });
+      if (!r.ok) throw new Error('Result fetch failed (' + r.status + ')');
+      return r.json();
+    }
+    if (st.status === 'FAILED' || st.status === 'ERROR') throw new Error('Generation failed on fal.ai — check prompt/content policy.');
+  }
+  throw new Error('Timed out waiting for result (20 min).');
+}
+
+/* ---------- jobs UI ---------- */
+function addJobCard(kind, label) {
+  const el = document.createElement('div');
+  el.className = 'job';
+  el.innerHTML = '<span class="spin"></span><span class="jp"></span><span class="jstat" style="color:var(--muted)">queued…</span>';
+  el.querySelector('.jp').textContent = label;
+  document.getElementById('jobs-' + kind).prepend(el);
+  return {
+    status(t) { el.querySelector('.jstat').textContent = t; },
+    done() { el.remove(); },
+    fail(msg) { el.classList.add('err'); el.querySelector('.spin').remove(); el.querySelector('.jstat').textContent = ''; el.querySelector('.jp').textContent = msg; el.querySelector('.jp').style.whiteSpace = 'normal';
+      const x = document.createElement('button'); x.className = 'ghost'; x.textContent = '✕'; x.onclick = () => el.remove(); el.appendChild(x); }
+  };
+}
+
+/* ---------- generate: video ---------- */
+document.getElementById('vGo').onclick = async () => {
+  const m = VIDEO_MODELS[vModel.value];
+  const prompt = document.getElementById('vPrompt').value.trim();
+  if (!prompt) return alert('Write a prompt first.');
+  const imgUrl = document.getElementById('vImgUrl').value.trim() || vImgDataUri;
+  const useI2v = m.i2vSupported && imgUrl;
+  const endpoint = useI2v ? m.i2v : m.t2v;
+  const input = { prompt };
+  const neg = document.getElementById('vNeg').value.trim();
+  if (neg) input.negative_prompt = neg;
+  if (m.veo) {
+    input.duration = vDuration.value;               // '4s' | '6s' | '8s'
+    input.aspect_ratio = vAspect.value;
+    input.resolution = document.getElementById('vRes').value;
+    input.generate_audio = document.getElementById('vAudio').value === 'true';
+  } else {
+    input.duration = vDuration.value;               // '5' | '10' | '6'
+    if (!useI2v) input.aspect_ratio = vAspect.value;
+  }
+  if (useI2v) input.image_url = imgUrl;
+
+  const cost = vEstCost();
+  const card = addJobCard('video', (useI2v ? '[i2v] ' : '') + prompt);
+  try {
+    const job = await falSubmit(endpoint, input);
+    card.status('generating… (~$' + cost.toFixed(2) + ')');
+    const result = await falPoll(job);
+    const url = result.video && result.video.url;
+    if (!url) throw new Error('No video in response.');
+    card.done();
+    logGeneration({ kind: 'video', model: vModel.value, modelName: m.name.split(' — ')[0], prompt, url, cost, seconds: vSeconds() });
+  } catch (e) { card.fail(e.message); }
+};
+
+/* ---------- generate: image ---------- */
+document.getElementById('iGo').onclick = async () => {
+  const m = IMAGE_MODELS[iModel.value];
+  const prompt = document.getElementById('iPrompt').value.trim();
+  if (!prompt) return alert('Write a prompt first.');
+  const n = parseInt(document.getElementById('iNum').value, 10);
+  const input = { prompt, num_images: n };
+  input[m.sizeParam] = iSize.value;
+  if (m.sizeParam === 'image_size') input.max_images = n;
+  const cost = iEstCost();
+  const card = addJobCard('image', prompt);
+  try {
+    const job = await falSubmit(m.ep, input);
+    card.status('generating… (~$' + cost.toFixed(3) + ')');
+    const result = await falPoll(job);
+    const imgs = (result.images || []).map(x => x.url).filter(Boolean);
+    if (!imgs.length) throw new Error('No images in response.');
+    card.done();
+    imgs.forEach(url => logGeneration({ kind: 'image', model: iModel.value, modelName: m.name.split(' — ')[0], prompt, url, cost: m.perImage, seconds: 0 }));
+  } catch (e) { card.fail(e.message); }
+};
+
+/* ---------- history + costs ---------- */
+function logGeneration(g) {
+  g.ts = new Date().toISOString();
+  history.unshift(g);
+  if (history.length > 200) history = history.slice(0, 200);
+  store.set('history', history);
+  renderHistory(); renderStats(); renderCosts();
+}
+function renderHistory() {
+  const grid = document.getElementById('histGrid');
+  grid.innerHTML = '';
+  document.getElementById('histEmpty').style.display = history.length ? 'none' : 'block';
+  history.forEach(g => {
+    const c = document.createElement('div');
+    c.className = 'hcard';
+    const media = g.kind === 'video'
+      ? '<video controls preload="metadata" src="' + g.url + '"></video>'
+      : '<img loading="lazy" src="' + g.url + '">';
+    c.innerHTML = media + '<div class="meta"><div class="p"></div><div class="m"><span></span><span></span></div>'
+      + '<div class="m"><a href="' + g.url + '" target="_blank" rel="noopener">open / download</a><span>$' + g.cost.toFixed(3) + '</span></div></div>';
+    c.querySelector('.p').textContent = g.prompt;
+    const ms = c.querySelectorAll('.m')[0].querySelectorAll('span');
+    ms[0].textContent = g.modelName;
+    ms[1].textContent = new Date(g.ts).toLocaleDateString();
+    grid.appendChild(c);
+  });
+}
+function monthEntries() {
+  const now = new Date();
+  return history.filter(g => { const d = new Date(g.ts); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); });
+}
+function renderStats() {
+  const m = monthEntries();
+  const spend = m.reduce((s, g) => s + g.cost, 0);
+  document.getElementById('stSpend').textContent = '$' + spend.toFixed(2);
+  document.getElementById('stCount').textContent = m.length;
+  const v = m.filter(g => g.kind === 'video').length;
+  document.getElementById('stMix').textContent = m.length ? (v + ' video · ' + (m.length - v) + ' image') : '—';
+  document.getElementById('stAvg').textContent = m.length ? '$' + (spend / m.length).toFixed(2) : '—';
+}
+function renderCosts() {
+  const m = monthEntries();
+  const by = {};
+  m.forEach(g => {
+    by[g.modelName] = by[g.modelName] || { n: 0, units: 0, spend: 0, kind: g.kind };
+    by[g.modelName].n++; by[g.modelName].units += g.kind === 'video' ? g.seconds : 1; by[g.modelName].spend += g.cost;
+  });
+  const tb = document.getElementById('costBody');
+  tb.innerHTML = '';
+  const rows = Object.entries(by).sort((a, b) => b[1].spend - a[1].spend);
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="4" class="empty">No generations this month.</td></tr>'; return; }
+  let tn = 0, ts = 0;
+  rows.forEach(([name, r]) => {
+    tn += r.n; ts += r.spend;
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td class="num">' + r.n + '</td><td class="num">' + r.units + (r.kind === 'video' ? 's' : '') + '</td><td class="num">$' + r.spend.toFixed(2) + '</td>';
+    tr.querySelector('td').textContent = name;
+    tb.appendChild(tr);
+  });
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td><b>Total</b></td><td class="num"><b>' + tn + '</b></td><td class="num"></td><td class="num"><b>$' + ts.toFixed(2) + '</b></td>';
+  tb.appendChild(tr);
+}
+document.getElementById('costExport').onclick = () => {
+  const rows = [['timestamp','kind','model','prompt','est_cost_usd','url']]
+    .concat(history.map(g => [g.ts, g.kind, g.modelName, '"' + g.prompt.replace(/"/g, '""') + '"', g.cost.toFixed(4), g.url]));
+  const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'gen-studio-costs.csv'; a.click();
+};
+
+/* ---------- presets ---------- */
+function allPresets() { return BUILTIN_PRESETS.concat(customPresets); }
+function renderPresets() {
+  const grid = document.getElementById('presetGrid');
+  grid.innerHTML = '';
+  allPresets().forEach((p, idx) => {
+    const c = document.createElement('div');
+    c.className = 'pcard';
+    c.innerHTML = '<span class="chip">' + p.type + (p.builtin ? '' : ' · custom') + '</span><h4></h4><p></p><div class="row"></div>';
+    c.querySelector('h4').textContent = p.name;
+    c.querySelector('p').textContent = p.text;
+    const row = c.querySelector('.row');
+    const use = document.createElement('button'); use.textContent = 'Use';
+    use.onclick = () => insertPreset(p);
+    row.appendChild(use);
+    if (!p.builtin) {
+      const del = document.createElement('button'); del.className = 'ghost'; del.textContent = 'Delete';
+      del.onclick = () => { customPresets.splice(idx - BUILTIN_PRESETS.length, 1); store.set('presets', customPresets); renderPresets(); };
+      row.appendChild(del);
+    }
+    grid.appendChild(c);
+  });
+}
+function insertPreset(p) {
+  const ta = document.getElementById(p.type === 'video' ? 'vPrompt' : 'iPrompt');
+  ta.value = ta.value ? (ta.value.replace(/[,\s]+$/, '') + ', ' + p.text) : p.text;
+  document.querySelector('.tabs button[data-tab="' + p.type + '"]').click();
+  ta.focus();
+}
+function openPresetPicker(type) {
+  document.querySelector('.tabs button[data-tab="presets"]').click();
+  document.getElementById('pType').value = type;
+}
+document.getElementById('pAdd').onclick = () => {
+  const name = document.getElementById('pName').value.trim();
+  const text = document.getElementById('pText').value.trim();
+  if (!name || !text) return alert('Name and prompt text are both required.');
+  customPresets.push({ name, text, type: document.getElementById('pType').value });
+  store.set('presets', customPresets);
+  document.getElementById('pName').value = ''; document.getElementById('pText').value = '';
+  renderPresets();
+};
+
+renderPresets(); renderHistory(); renderStats(); renderCosts();
+</script>
+</body>
+</html>
